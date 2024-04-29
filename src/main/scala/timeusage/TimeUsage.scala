@@ -40,15 +40,29 @@ object TimeUsage extends TimeUsageInterface {
 
     /** @return The read DataFrame along with its column names. */
     def read(path: String): (List[String], DataFrame) = {
-        val df = spark.read.options(Map("header" -> "true", "inferSchema" -> "true")).csv(path)
+        val rawDf = spark.read
+            .options(Map("header" -> "true", "inferSchema" -> "true"))
+            .csv(path)
+        val df = rawDf
+            .select(
+                rawDf.columns.map(c => setStructSchema(c)): _*
+            )
         (df.schema.fields.map(_.name).toList, df)
     }
+
+    def setStructSchema(c: String)=
+        c match {
+            case "tucaseid" => col(c).cast(StringType)
+            case _ => col(c).cast(DoubleType)
+        }
 
     /** @return An RDD Row compatible with the schema produced by `dfSchema`
      * @param line Raw fields
      */
-    def row(line: List[String]): Row =
-        ???
+    def row(line: List[String]): Row = {
+        val convertedLine = line.map(l => if (l != "tucaseid") l.toDouble else l)
+        Row.fromSeq(convertedLine)
+    }
 
     /** @return The initial data frame columns partitioned in three groups: primary needs (sleeping, eating, etc.),
      *         work and other (leisure activities)
@@ -66,7 +80,26 @@ object TimeUsage extends TimeUsageInterface {
      *    “t10”, “t12”, “t13”, “t14”, “t15”, “t16” and “t18” (those which are not part of the previous groups only).
      */
     def classifiedColumns(columnNames: List[String]): (List[Column], List[Column], List[Column]) = {
-        ???
+
+        def isPrimaryNeeds(columnName: String): Boolean = {
+            val prefixes = List("t01", "t03", "t11", "t1801", "t1803")
+            prefixes.exists(columnName.startsWith)
+        }
+
+        def isWorking(columnName: String): Boolean = {
+            val prefixes = List("t05", "t1805")
+            prefixes.exists(columnName.startsWith)
+        }
+
+        def isOther(columnName: String): Boolean = {
+            val prefixes = List("t02", "t04", "t06", "t07", "t08", "t09", "t10", "t12", "t13", "t14", "t15", "t16", "t18")
+            prefixes.exists(columnName.startsWith) && !isPrimaryNeeds(columnName)
+        }
+
+        val primaryNeedsColumns = columnNames.filter(isPrimaryNeeds).map(col)
+        val workingColumns = columnNames.filter(isWorking).map(col)
+        val otherColumns = columnNames.filter(isOther).map(col)
+        (primaryNeedsColumns, workingColumns, otherColumns)
     }
 
     /** @return a projection of the initial DataFrame such that all columns containing hours spent on primary needs
@@ -100,26 +133,33 @@ object TimeUsage extends TimeUsageInterface {
      * Note that the initial DataFrame contains time in ''minutes''. You have to convert it into ''hours''.
      */
     def timeUsageSummary(
-                            primaryNeedsColumns: List[Column],
-                            workColumns: List[Column],
-                            otherColumns: List[Column],
-                            df: DataFrame
-                        ): DataFrame = {
+        primaryNeedsColumns: List[Column],
+        workColumns: List[Column],
+        otherColumns: List[Column],
+        df: DataFrame
+    ): DataFrame = {
         // Transform the data from the initial dataset into data that make
         // more sense for our use case
         // Hint: you can use the `when` and `otherwise` Spark functions
         // Hint: don’t forget to give your columns the expected name with the `as` method
-        val workingStatusProjection: Column = ???
-        val sexProjection: Column = ???
-        val ageProjection: Column = ???
+        val workingStatusProjection: Column = when(col("telfs") < 3, "Travail")
+            .otherwise("Non travail")
+            .as("Travail")
+        val sexProjection: Column = when(col("tesex") === 1, "Homme")
+            .otherwise("Femme")
+            .as("Sexe")
+        val ageProjection: Column = when(col("teage").between(15, 22), "Jeune")
+            .when(col("teage").between(23, 55), "Actif")
+            .otherwise("Personne âgée")
+            .as("Age")
 
         // Create columns that sum columns of the initial dataset
         // Hint: you want to create a complex column expression that sums other columns
         //       by using the `+` operator between them
         // Hint: don’t forget to convert the value to hours
-        val primaryNeedsProjection: Column = ???
-        val workProjection: Column = ???
-        val otherProjection: Column = ???
+        val primaryNeedsProjection: Column = (primaryNeedsColumns.reduce(_ + _) / 60).as("Total besoins primaires (en heures)")
+        val workProjection: Column = round(workColumns.reduce(_ + _) / 60).as("Total travail (en heures)")
+        val otherProjection: Column = round(otherColumns.reduce(_ + _) / 60).as("Total autres activités (en heures)")
         df
             .select(workingStatusProjection, sexProjection, ageProjection, primaryNeedsProjection, workProjection, otherProjection)
             .where($"telfs" <= 4) // Discard people who are not in labor force
@@ -143,7 +183,14 @@ object TimeUsage extends TimeUsageInterface {
      * Finally, the resulting DataFrame should be sorted by working status, sex and age.
      */
     def timeUsageGrouped(summed: DataFrame): DataFrame = {
-        ???
+        summed
+            .groupBy("Travail", "Sexe", "Age")
+            .agg(
+                round(avg("Total besoins primaires (en heures)"), 1).as("Besoins primaires moyens (en heures)"),
+                round(avg("Total travail (en heures)"), 1).as("Travail moyen (en heures)"),
+                round(avg("Total autres activités (en heures)"), 1).as("Autres activités moyennes (en heures)")
+            )
+            .orderBy("Travail", "Sexe", "Age")
     }
 
     /**
@@ -198,10 +245,10 @@ object TimeUsage extends TimeUsageInterface {
  * @param other Number of daily hours spent on other activities
  */
 case class TimeUsageRow(
-                           working: String,
-                           sex: String,
-                           age: String,
-                           primaryNeeds: Double,
-                           work: Double,
-                           other: Double
-                       )
+    working: String,
+    sex: String,
+    age: String,
+    primaryNeeds: Double,
+    work: Double,
+    other: Double
+)
