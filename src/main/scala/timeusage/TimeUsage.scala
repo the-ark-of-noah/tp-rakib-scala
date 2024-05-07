@@ -2,7 +2,8 @@ package timeusage
 
 import org.apache.spark.sql._
 import org.apache.spark.sql.types._
-import org.apache.log4j.{Logger, Level}
+import org.apache.log4j.{Level, Logger}
+
 import scala.util.Properties.isWin
 
 /** Main class */
@@ -45,16 +46,13 @@ object TimeUsage extends TimeUsageInterface {
             .csv(path)
         val df = rawDf
             .select(
-                rawDf.columns.map(c => setStructSchema(c)): _*
+                rawDf.columns.map {
+                    case c@"tucaseid" => col(c).cast(StringType)
+                    case c => col(c).cast(DoubleType)
+                }: _*
             )
         (df.schema.fields.map(_.name).toList, df)
     }
-
-    def setStructSchema(c: String)=
-        c match {
-            case "tucaseid" => col(c).cast(StringType)
-            case _ => col(c).cast(DoubleType)
-        }
 
     /** @return An RDD Row compatible with the schema produced by `dfSchema`
      * @param line Raw fields
