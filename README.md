@@ -4,6 +4,13 @@
 [Lien vers le sujet de Rakib](https://hackmd.io/@NoobZik/HkoGsdvWR#)
 
 ## Installation
+### Requirements
+- Java 8 (1.8)
+- Scala 2.12
+- SBT
+- Intellij IDEA de préférence
+
+
 ### Pour tous
 Vous devez télécharger le fichier csv sur [ce lien](https://moocs.scala-lang.org/~dockermoocs/bigdata/atussum.csv).
 Ensuite, vous devez le placer dans le dossier `src/main/resources/timeusage`.
