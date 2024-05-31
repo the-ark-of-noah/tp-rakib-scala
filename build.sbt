@@ -1,7 +1,7 @@
 course := "bigdata"
 assignment := "timeusage"
 
-scalaVersion := "2.13.5"
+scalaVersion := "2.13.13"
 scalacOptions ++= Seq("-language:implicitConversions", "-deprecation")
 libraryDependencies ++= Seq(
   excludes("org.apache.spark" %% "spark-core" % "3.2.0"),
