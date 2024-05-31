@@ -61,14 +61,6 @@ object TimeUsage extends TimeUsageInterface {
     (df.schema.fields.map(_.name).toList, df)
   }
 
-  /** @return An RDD Row compatible with the schema produced by `dfSchema`
-   * @param line Raw fields
-   */
-  def row(line: List[String]): Row = {
-    val convertedLine = line.map(l => if (l != "tucaseid") l.toDouble else l)
-    Row.fromSeq(convertedLine)
-  }
-
   /** @return The initial data frame columns partitioned in three groups: primary needs (sleeping, eating, etc.),
    *          work and other (leisure activities)
    * @see https://www.kaggle.com/bls/american-time-use-survey
@@ -168,6 +160,63 @@ object TimeUsage extends TimeUsageInterface {
       .where($"telfs" <= 4) // Discard people who are not in labor force
   }
 
+  /**
+   * @return A `Dataset[TimeUsageRow]` from the “untyped” `DataFrame`
+   * @param timeUsageSummaryDf `DataFrame` returned by the `timeUsageSummary` method
+   *
+   *                           Hint: you should use the `getAs` method of `Row` to look up columns and
+   *                           cast them at the same time.
+   */
+  def timeUsageSummaryTyped(timeUsageSummaryDf: DataFrame): Dataset[TimeUsageRow] =
+    timeUsageSummaryDf.map {
+      row =>
+        TimeUsageRow(
+          row.getAs[String]("Travail"),
+          row.getAs[String]("Sexe"),
+          row.getAs[String]("Age"),
+          row.getAs[Double]("Total besoins primaires (en heures)"),
+          row.getAs[Double]("Total travail (en heures)"),
+          row.getAs[Double]("Total autres activités (en heures)")
+        )
+    }
+
+  /**
+   * @return Same as `timeUsageGrouped`, but using the typed API when possible
+   * @param summed Dataset returned by the `timeUsageSummaryTyped` method
+   *
+   *               Note that, though they have the same type (`Dataset[TimeUsageRow]`), the input
+   *               dataset contains one element per respondent, whereas the resulting dataset
+   *               contains one element per group (whose time spent on each activity kind has
+   *               been aggregated).
+   *
+   *               Hint: you should use the `groupByKey` and `avg` methods.
+   */
+  def timeUsageGroupedTyped(summed: Dataset[TimeUsageRow]): Dataset[TimeUsageRow] = {
+    summed
+      .groupByKey(row => (row.working
+        , row.sex
+        , row.age))
+      .agg(
+        round(avg($"primaryNeeds"), 1).as("Besoin primaire moyen (en heures)").as[Double],
+        round(avg($"work"), 1).as[Double],
+        round(avg($"other"), 1).as[Double]
+      )
+      .map {
+        case ((working, sex, age), primaryNeeds, work, other) =>
+          TimeUsageRow(working, sex, age, primaryNeeds, work, other)
+      }
+
+
+  }
+
+  /** @return An RDD Row compatible with the schema produced by `dfSchema`
+   * @param line Raw fields
+   */
+  def row(line: List[String]): Row = {
+    val convertedLine = line.map(l => if (l != "tucaseid") l.toDouble else l)
+    Row.fromSeq(convertedLine)
+  }
+
   /** @return the average daily time (in hours) spent in primary needs, working or leisure, grouped by the different
    *          ages of life (young, active or elder), sex and working status.
    * @param summed DataFrame returned by `timeUsageSumByClass`
@@ -219,56 +268,6 @@ object TimeUsage extends TimeUsageInterface {
        |GROUP BY Travail, Sexe, Age
        |ORDER BY Travail, Sexe, Age
        |""".stripMargin
-
-  /**
-   * @return A `Dataset[TimeUsageRow]` from the “untyped” `DataFrame`
-   * @param timeUsageSummaryDf `DataFrame` returned by the `timeUsageSummary` method
-   *
-   *                           Hint: you should use the `getAs` method of `Row` to look up columns and
-   *                           cast them at the same time.
-   */
-  def timeUsageSummaryTyped(timeUsageSummaryDf: DataFrame): Dataset[TimeUsageRow] =
-    timeUsageSummaryDf.map {
-      row =>
-        TimeUsageRow(
-          row.getAs[String]("Travail"),
-          row.getAs[String]("Sexe"),
-          row.getAs[String]("Age"),
-          row.getAs[Double]("Total besoins primaires (en heures)"),
-          row.getAs[Double]("Total travail (en heures)"),
-          row.getAs[Double]("Total autres activités (en heures)")
-        )
-    }
-
-
-  /**
-   * @return Same as `timeUsageGrouped`, but using the typed API when possible
-   * @param summed Dataset returned by the `timeUsageSummaryTyped` method
-   *
-   *               Note that, though they have the same type (`Dataset[TimeUsageRow]`), the input
-   *               dataset contains one element per respondent, whereas the resulting dataset
-   *               contains one element per group (whose time spent on each activity kind has
-   *               been aggregated).
-   *
-   *               Hint: you should use the `groupByKey` and `avg` methods.
-   */
-  def timeUsageGroupedTyped(summed: Dataset[TimeUsageRow]): Dataset[TimeUsageRow] = {
-    summed
-      .groupByKey(row => (row.working
-        , row.sex
-        , row.age))
-      .agg(
-        round(avg($"primaryNeeds"), 1).as("Besoin primaire moyen (en heures)").as[Double],
-        round(avg($"work"), 1).as[Double],
-        round(avg($"other"), 1).as[Double]
-      )
-      .map {
-        case ((working, sex, age), primaryNeeds, work, other) =>
-          TimeUsageRow(working, sex, age, primaryNeeds, work, other)
-      }
-
-
-  }
 }
 
 /**

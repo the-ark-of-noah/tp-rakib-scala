@@ -1,12 +1,12 @@
 course := "bigdata"
 assignment := "timeusage"
 
-scalaVersion := "2.13.13"
+scalaVersion := "2.13.5"
 scalacOptions ++= Seq("-language:implicitConversions", "-deprecation")
 libraryDependencies ++= Seq(
   excludes("org.apache.spark" %% "spark-core" % "3.2.0"),
   excludes("org.apache.spark" %% "spark-sql" % "3.2.0"),
-  "org.scalameta" %% "munit" % "0.7.26" % Test,
+  "org.scalameta" %% "munit" % "1.0.0" % Test,
 )
 
 //netty-all replaces all these excludes
