@@ -35,7 +35,11 @@ object TimeUsage extends TimeUsageInterface {
         val (columns, initDf) = read("src/main/resources/timeusage/atussum.csv")
         val (primaryNeedsColumns, workColumns, otherColumns) = classifiedColumns(columns)
         val summaryDf = timeUsageSummary(primaryNeedsColumns, workColumns, otherColumns, initDf)
+        /** Méthode 1 */
         val finalDf = timeUsageGrouped(summaryDf)
+        /** Méthode 2 */
+//        val summaryDfTyped = timeUsageSummaryTyped(summaryDf)
+//        val finalDf = timeUsageGroupedTyped(summaryDfTyped)
         finalDf.show()
     }
 
@@ -205,7 +209,15 @@ object TimeUsage extends TimeUsageInterface {
      * @param viewName Name of the SQL view to use
      */
     def timeUsageGroupedSqlQuery(viewName: String): String =
-        ???
+        s"""
+           |SELECT Travail, Sexe, Age,
+           |ROUND(AVG(`Total besoins primaires (en heures)`), 1) AS `Besoins primaires moyens (en heures)`,
+           |ROUND(AVG(`Total travail (en heures)`), 1) AS `Travail moyen (en heures)`,
+           |ROUND(AVG(`Total autres activités (en heures)`), 1) AS `Autres activités moyennes (en heures)`
+           |FROM $viewName
+           |GROUP BY Travail, Sexe, Age
+           |ORDER BY Travail, Sexe, Age
+           |""".stripMargin
 
     /**
      * @return A `Dataset[TimeUsageRow]` from the “untyped” `DataFrame`
@@ -215,7 +227,18 @@ object TimeUsage extends TimeUsageInterface {
      * cast them at the same time.
      */
     def timeUsageSummaryTyped(timeUsageSummaryDf: DataFrame): Dataset[TimeUsageRow] =
-        ???
+        timeUsageSummaryDf.map {
+            row =>
+                TimeUsageRow(
+                    row.getAs[String]("Travail"),
+                    row.getAs[String]("Sexe"),
+                    row.getAs[String]("Age"),
+                    row.getAs[Double]("Total besoins primaires (en heures)"),
+                    row.getAs[Double]("Total travail (en heures)"),
+                    row.getAs[Double]("Total autres activités (en heures)")
+                )
+        }
+
 
     /**
      * @return Same as `timeUsageGrouped`, but using the typed API when possible
@@ -229,7 +252,21 @@ object TimeUsage extends TimeUsageInterface {
      * Hint: you should use the `groupByKey` and `avg` methods.
      */
     def timeUsageGroupedTyped(summed: Dataset[TimeUsageRow]): Dataset[TimeUsageRow] = {
-        ???
+        summed
+            .groupByKey(row => (row.working
+                , row.sex
+                , row.age))
+            .agg(
+                round(avg($"primaryNeeds"), 1).as("Besoin primaire moyen (en heures)").as[Double],
+                round(avg($"work"), 1).as[Double],
+                round(avg($"other"), 1).as[Double]
+            )
+            .map {
+                case ((working, sex, age), primaryNeeds, work, other) =>
+                    TimeUsageRow(working, sex, age, primaryNeeds, work, other)
+            }
+
+
     }
 }
 
